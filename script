@@ -1,0 +1,362 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Player = Players.LocalPlayer
+local Waypoints = {}
+local Selected = nil
+local ActiveTween = nil
+
+local function getRoot()
+    local char = Player.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getGuiParent()
+    local ok, result = pcall(function()
+        if gethui then
+            return gethui()
+        end
+        return game:GetService("CoreGui")
+    end)
+    return ok and result or Player:WaitForChild("PlayerGui")
+end
+
+local parent = getGuiParent()
+
+pcall(function()
+    parent:FindFirstChild("WaypointManager"):Destroy()
+end)
+
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "WaypointManager"
+Gui.ResetOnSpawn = false
+Gui.Parent = parent
+
+local function create(class, props, parentObj)
+    local obj = Instance.new(class)
+    for k, v in pairs(props) do
+        obj[k] = v
+    end
+    obj.Parent = parentObj
+    return obj
+end
+
+local Main = create("Frame", {
+    Size = UDim2.fromOffset(285, 365),
+    Position = UDim2.new(0.5, -142, 0.5, -182),
+    BackgroundColor3 = Color3.fromRGB(20, 23, 32),
+    BorderSizePixel = 0
+}, Gui)
+
+create("UICorner", {CornerRadius = UDim.new(0, 12)}, Main)
+create("UIStroke", {
+    Color = Color3.fromRGB(55, 145, 255),
+    Thickness = 1.5
+}, Main)
+
+local Header = create("TextLabel", {
+    Size = UDim2.new(1, -45, 0, 42),
+    Position = UDim2.fromOffset(12, 0),
+    BackgroundTransparency = 1,
+    Text = "◆  WAYPOINT MANAGER",
+    TextColor3 = Color3.fromRGB(100, 185, 255),
+    TextSize = 15,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, Main)
+
+local Close = create("TextButton", {
+    Size = UDim2.fromOffset(32, 30),
+    Position = UDim2.new(1, -38, 0, 6),
+    Text = "×",
+    TextSize = 22,
+    TextColor3 = Color3.new(1, 1, 1),
+    BackgroundColor3 = Color3.fromRGB(170, 55, 65),
+    Font = Enum.Font.GothamBold,
+    BorderSizePixel = 0
+}, Main)
+create("UICorner", {CornerRadius = UDim.new(0, 7)}, Close)
+
+local SelectedLabel = create("TextLabel", {
+    Size = UDim2.new(1, -24, 0, 20),
+    Position = UDim2.fromOffset(12, 43),
+    BackgroundTransparency = 1,
+    Text = "SELECTED WAYPOINT",
+    TextColor3 = Color3.fromRGB(145, 155, 175),
+    TextSize = 10,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, Main)
+
+local Drop = create("TextButton", {
+    Size = UDim2.new(1, -24, 0, 38),
+    Position = UDim2.fromOffset(12, 65),
+    BackgroundColor3 = Color3.fromRGB(34, 40, 54),
+    Text = "No waypoint selected  ▼",
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 12,
+    Font = Enum.Font.GothamMedium,
+    BorderSizePixel = 0
+}, Main)
+create("UICorner", {CornerRadius = UDim.new(0, 7)}, Drop)
+
+local List = create("ScrollingFrame", {
+    Size = UDim2.new(1, -24, 0, 0),
+    Position = UDim2.fromOffset(12, 106),
+    BackgroundColor3 = Color3.fromRGB(29, 34, 46),
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    Visible = false,
+    CanvasSize = UDim2.new()
+}, Main)
+create("UICorner", {CornerRadius = UDim.new(0, 7)}, List)
+
+local ListLayout = create("UIListLayout", {
+    Padding = UDim.new(0, 4),
+    SortOrder = Enum.SortOrder.LayoutOrder
+}, List)
+
+local function button(name, text, x, y, w, color)
+    local b = create("TextButton", {
+        Name = name,
+        Size = UDim2.fromOffset(w, 37),
+        Position = UDim2.fromOffset(x, y),
+        BackgroundColor3 = color,
+        Text = text,
+        TextColor3 = Color3.new(1, 1, 1),
+        TextSize = 12,
+        Font = Enum.Font.GothamBold,
+        BorderSizePixel = 0
+    }, Main)
+    create("UICorner", {CornerRadius = UDim.new(0, 7)}, b)
+    return b
+end
+
+local Blue = Color3.fromRGB(40, 115, 210)
+local Red = Color3.fromRGB(170, 65, 75)
+local Gray = Color3.fromRGB(48, 57, 75)
+local Green = Color3.fromRGB(35, 145, 105)
+
+local Delete = button("Delete", "DELETE", 12, 115, 126, Red)
+local Rename = button("Rename", "RENAME", 147, 115, 126, Gray)
+local Tween = button("Tween", "TWEEN", 12, 160, 126, Blue)
+local TP = button("TP", "INSTANT TP", 147, 160, 126, Green)
+
+local NameBox = create("TextBox", {
+    Size = UDim2.new(1, -24, 0, 35),
+    Position = UDim2.fromOffset(12, 207),
+    BackgroundColor3 = Color3.fromRGB(34, 40, 54),
+    Text = "",
+    PlaceholderText = "Waypoint name...",
+    PlaceholderColor3 = Color3.fromRGB(130, 140, 155),
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 12,
+    Font = Enum.Font.Gotham,
+    ClearTextOnFocus = false,
+    BorderSizePixel = 0
+}, Main)
+create("UICorner", {CornerRadius = UDim.new(0, 7)}, NameBox)
+
+local Save = button("Save", "SAVE CURRENT COORDINATES", 12, 252, 261, Blue)
+local New = button("New", "+ NEW WAYPOINT", 12, 297, 261, Green)
+
+local Status = create("TextLabel", {
+    Size = UDim2.new(1, -24, 0, 20),
+    Position = UDim2.fromOffset(12, 338),
+    BackgroundTransparency = 1,
+    Text = "Ready",
+    TextColor3 = Color3.fromRGB(150, 165, 185),
+    TextSize = 10,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, Main)
+
+local function refresh()
+    Drop.Text = Selected and ("◆  " .. Selected .. "  ▼")
+        or "No waypoint selected  ▼"
+
+    for _, child in ipairs(List:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+
+    for name in pairs(Waypoints) do
+        local item = create("TextButton", {
+            Size = UDim2.new(1, -8, 0, 30),
+            BackgroundColor3 = Color3.fromRGB(45, 55, 73),
+            Text = "  " .. name,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 11,
+            Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            BorderSizePixel = 0
+        }, List)
+
+        create("UICorner", {
+            CornerRadius = UDim.new(0, 5)
+        }, item)
+
+        item.MouseButton1Click:Connect(function()
+            Selected = name
+            List.Visible = false
+            List.Size = UDim2.new(1, -24, 0, 0)
+            refresh()
+        end)
+    end
+
+    List.CanvasSize = UDim2.fromOffset(0,
+        #List:GetChildren() * 34)
+end
+
+Drop.MouseButton1Click:Connect(function()
+    List.Visible = not List.Visible
+    List.Size = List.Visible
+        and UDim2.new(1, -24, 0, 125)
+        or UDim2.new(1, -24, 0, 0)
+end)
+
+New.MouseButton1Click:Connect(function()
+    local root = getRoot()
+    if not root then return end
+
+    local name = NameBox.Text
+    if name == "" then
+        name = "Waypoint " .. tostring(#(function()
+            local t = {}
+            for _ in pairs(Waypoints) do
+                table.insert(t, true)
+            end
+            return t
+        end)() + 1)
+    end
+
+    if Waypoints[name] then
+        Status.Text = "Name already exists!"
+        return
+    end
+
+    Waypoints[name] = root.CFrame
+    Selected = name
+    NameBox.Text = ""
+    refresh()
+    Status.Text = "Created: " .. name
+end)
+
+Save.MouseButton1Click:Connect(function()
+    local root = getRoot()
+    if not root or not Selected then
+        Status.Text = "Select a waypoint first!"
+        return
+    end
+
+    Waypoints[Selected] = root.CFrame
+    Status.Text = "Coordinates updated!"
+end)
+
+Delete.MouseButton1Click:Connect(function()
+    if not Selected then return end
+    Waypoints[Selected] = nil
+    Selected = nil
+    refresh()
+    Status.Text = "Waypoint deleted"
+end)
+
+Rename.MouseButton1Click:Connect(function()
+    if not Selected then return end
+
+    local newName = NameBox.Text
+    if newName == "" or Waypoints[newName] then
+        Status.Text = "Enter a unique name!"
+        return
+    end
+
+    Waypoints[newName] = Waypoints[Selected]
+    Waypoints[Selected] = nil
+    Selected = newName
+    NameBox.Text = ""
+    refresh()
+    Status.Text = "Waypoint renamed!"
+end)
+
+local function teleport(smooth)
+    if not Selected or not Waypoints[Selected] then
+        Status.Text = "Select a waypoint first!"
+        return
+    end
+
+    local root = getRoot()
+    if not root then
+        Status.Text = "Character unavailable"
+        return
+    end
+
+    if ActiveTween then
+        ActiveTween:Cancel()
+        ActiveTween = nil
+    end
+
+    if smooth then
+        ActiveTween = TweenService:Create(
+            root,
+            TweenInfo.new(1.5, Enum.EasingStyle.Linear),
+            {CFrame = Waypoints[Selected]}
+        )
+        ActiveTween:Play()
+        Status.Text = "Tweening to " .. Selected
+    else
+        root.CFrame = Waypoints[Selected]
+        Status.Text = "Teleported to " .. Selected
+    end
+end
+
+Tween.MouseButton1Click:Connect(function()
+    teleport(true)
+end)
+
+TP.MouseButton1Click:Connect(function()
+    teleport(false)
+end)
+
+Close.MouseButton1Click:Connect(function()
+    if ActiveTween then ActiveTween:Cancel() end
+    Gui:Destroy()
+end)
+
+-- Mobile and mouse dragging
+local dragging = false
+local dragStart, startPos
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+refresh()
