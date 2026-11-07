@@ -1,7 +1,7 @@
 
 -- WAYPOINT MANAGER V4
--- V3 base + MISC LOOP PANEL
--- Session-only waypoint storage
+-- V3 + unlimited route waypoint selectors
+-- Local waypoint storage
 
 local Players=game:GetService("Players")
 local TS=game:GetService("TweenService")
@@ -10,11 +10,14 @@ local Player=Players.LocalPlayer
 local Mouse=Player:GetMouse()
 
 local Waypoints={}
-local Selected,A,B=nil,nil,nil
-local ActiveTween,ClickTool=nil,nil
-local ShowAll,Running=false,false
+local Selected=nil
+local Route={}
+local ActiveTween=nil
+local ClickTool=nil
+local ShowAll=false
 local LastColor=nil
 local Speed=1
+local Running=false
 local LoopToken=0
 
 local function root()
@@ -31,6 +34,7 @@ local function getParent()
 end
 
 local Parent=getParent()
+
 pcall(function()
  local old=Parent:FindFirstChild("WaypointManager")
  if old then old:Destroy() end
@@ -57,12 +61,8 @@ local function make(class,props,parent)
  return o
 end
 
-local function corner(o,r)
- make("UICorner",{CornerRadius=UDim.new(0,r or 7)},o)
-end
-
-local function stroke(o,c)
- make("UIStroke",{Color=c,Thickness=1.5},o)
+local function corner(o)
+ make("UICorner",{CornerRadius=UDim.new(0,7)},o)
 end
 
 local Blue=Color3.fromRGB(40,115,210)
@@ -78,31 +78,21 @@ local function frame(parent,x,y,w,h)
   BackgroundColor3=Dark,
   BorderSizePixel=0
  },parent)
- corner(f,12)
- stroke(f,Color3.fromRGB(55,145,255))
+ corner(f)
+ make("UIStroke",{
+  Color=Color3.fromRGB(55,145,255),
+  Thickness=1.5
+ },f)
  return f
 end
 
-local function label(parent,text,x,y,w,h,size,color)
- return make("TextLabel",{
-  Position=UDim2.fromOffset(x,y),
-  Size=UDim2.fromOffset(w,h),
-  BackgroundTransparency=1,
-  Text=text,
-  TextColor3=color or Color3.new(1,1,1),
-  TextSize=size or 11,
-  Font=Enum.Font.GothamBold,
-  TextXAlignment=Enum.TextXAlignment.Left
- },parent)
-end
-
-local function button(parent,name,text,x,y,w,h,color,z)
+local function button(parent,name,txt,x,y,w,h,color,z)
  local b=make("TextButton",{
   Name=name,
   Position=UDim2.fromOffset(x,y),
   Size=UDim2.fromOffset(w,h),
   BackgroundColor3=color,
-  Text=text,
+  Text=txt,
   TextColor3=Color3.new(1,1,1),
   TextSize=11,
   Font=Enum.Font.GothamBold,
@@ -110,8 +100,21 @@ local function button(parent,name,text,x,y,w,h,color,z)
   ZIndex=z or 2,
   Active=true
  },parent)
- corner(b,7)
+ corner(b)
  return b
+end
+
+local function label(parent,txt,x,y,w,h,size,color)
+ return make("TextLabel",{
+  Position=UDim2.fromOffset(x,y),
+  Size=UDim2.fromOffset(w,h),
+  BackgroundTransparency=1,
+  Text=txt,
+  TextColor3=color or Color3.new(1,1,1),
+  TextSize=size or 11,
+  Font=Enum.Font.GothamBold,
+  TextXAlignment=Enum.TextXAlignment.Left
+ },parent)
 end
 
 local function textbox(parent,x,y,w,h,placeholder,value)
@@ -121,14 +124,13 @@ local function textbox(parent,x,y,w,h,placeholder,value)
   BackgroundColor3=Color3.fromRGB(34,40,54),
   Text=value or "",
   PlaceholderText=placeholder,
-  PlaceholderColor3=Color3.fromRGB(130,140,155),
   TextColor3=Color3.new(1,1,1),
   TextSize=12,
   Font=Enum.Font.Gotham,
   ClearTextOnFocus=false,
   BorderSizePixel=0
  },parent)
- corner(t,7)
+ corner(t)
  return t
 end
 
@@ -137,7 +139,7 @@ local Main=frame(Gui,0,0,285,425)
 Main.AnchorPoint=Vector2.new(.5,.5)
 Main.Position=UDim2.new(.5,-145,.5,0)
 
-local Header=label(Main,"◆ WAYPOINT MANAGER",12,0,160,42,15,
+local Header=label(Main,"◆ WAYPOINT MANAGER",12,0,175,42,15,
  Color3.fromRGB(100,185,255))
 
 local MiscButton=button(Main,"Misc","MISC",195,6,42,29,Blue)
@@ -147,7 +149,7 @@ label(Main,"SELECTED WAYPOINT",12,43,250,20,10,
  Color3.fromRGB(145,155,175))
 
 local Drop=button(Main,"Dropdown","No waypoint selected ▼",
- 12,65,261,38,Color3.fromRGB(34,40,54),10)
+ 12,65,261,38,Gray,10)
 
 local List=make("ScrollingFrame",{
  Position=UDim2.fromOffset(12,106),
@@ -158,127 +160,92 @@ local List=make("ScrollingFrame",{
  Visible=false,
  CanvasSize=UDim2.new(),
  ZIndex=50,
- Active=true,
- ClipsDescendants=true
+ Active=true
 },Main)
-corner(List,7)
+corner(List)
 
 make("UIListLayout",{
  Padding=UDim.new(0,4),
  SortOrder=Enum.SortOrder.LayoutOrder
 },List)
 
-make("UIPadding",{
- PaddingTop=UDim.new(0,4),
- PaddingLeft=UDim.new(0,4),
- PaddingRight=UDim.new(0,4)
-},List)
-
 local Delete=button(Main,"Delete","DELETE",12,115,126,37,Red)
 local Rename=button(Main,"Rename","RENAME",147,115,126,37,Gray)
 local TweenButton=button(Main,"Tween","TWEEN",12,160,126,37,Blue)
 local TP=button(Main,"TP","INSTANT TP",147,160,126,37,Green)
-
 local NameBox=textbox(Main,12,207,261,35,"Waypoint name...")
-
-local GetTool=button(Main,"GetTool","GET COORDINATE TOOL",
- 12,252,261,37,Blue)
-
-local Visibility=button(Main,"Visibility","SHOW ALL: OFF",
- 12,297,261,37,Gray)
-
-local New=button(Main,"New","+ NEW WAYPOINT",
- 12,342,261,37,Green)
+local GetTool=button(Main,"GetTool","GET COORDINATE TOOL",12,252,261,37,Blue)
+local Visibility=button(Main,"Visibility","SHOW ALL: OFF",12,297,261,37,Gray)
+local New=button(Main,"New","+ NEW WAYPOINT",12,342,261,37,Green)
 
 local Status=label(Main,"Ready",12,387,261,20,10,
  Color3.fromRGB(150,165,185))
 
 -- MISC PANEL
-local Panel=frame(Gui,0,0,260,365)
+local Panel=frame(Gui,0,0,270,425)
 Panel.AnchorPoint=Vector2.new(0,.5)
 Panel.Position=UDim2.new(.5,10,.5,0)
 Panel.Visible=false
 
-local PanelHeader=label(Panel,"◆ MISC / LOOPS",12,5,190,30,13,
+local PanelHeader=label(Panel,"◆ MISC / ROUTE",12,5,200,30,13,
  Color3.fromRGB(100,185,255))
 
-local PanelClose=button(Panel,"PanelClose","×",222,5,28,27,Red)
+local PanelClose=button(Panel,"PanelClose","×",232,5,28,27,Red)
 
--- Waypoint selectors
-local function getNames()
- local names={}
- for n in pairs(Waypoints) do
-  table.insert(names,n)
- end
- table.sort(names)
- return names
-end
-
-local function selector(which,y)
- local b=button(Panel,"Select"..which,
-  "SELECT "..which.." ▼",10,y,240,32,Gray,5)
-
- local list=make("ScrollingFrame",{
-  Position=UDim2.fromOffset(10,y+34),
-  Size=UDim2.fromOffset(240,0),
-  BackgroundColor3=Color3.fromRGB(29,34,46),
-  BorderSizePixel=0,
-  ScrollBarThickness=4,
-  Visible=false,
-  CanvasSize=UDim2.new(),
-  ZIndex=80,
-  Active=true
- },Panel)
- corner(list,7)
-
- make("UIListLayout",{
-  Padding=UDim.new(0,3),
-  SortOrder=Enum.SortOrder.LayoutOrder
- },list)
-
- b.MouseButton1Click:Connect(function()
-  list.Visible=not list.Visible
-  list.Size=UDim2.fromOffset(240,list.Visible and 90 or 0)
-
-  for _,v in ipairs(list:GetChildren()) do
-   if v:IsA("TextButton") then v:Destroy() end
-  end
-
-  for i,n in ipairs(getNames()) do
-   local item=button(list,"Choice",n,0,0,230,27,Gray,81)
-   item.Size=UDim2.new(1,-5,0,27)
-   item.LayoutOrder=i
-
-   item.MouseButton1Click:Connect(function()
-    if which=="A" then A=n else B=n end
-    b.Text=n.." ▼"
-    list.Visible=false
-    list.Size=UDim2.fromOffset(240,0)
-   end)
-  end
-
-  list.CanvasSize=UDim2.fromOffset(0,#getNames()*30)
- end)
-
- return b
-end
-
-selector("A",40)
-selector("B",115)
-
-label(Panel,"SPEED / DELAY (SECONDS)",10,195,230,20,10,
+label(Panel,"ROUTE WAYPOINTS",10,38,230,18,10,
  Color3.fromRGB(150,165,185))
 
-local SpeedBox=textbox(Panel,10,218,105,32,"Seconds","1")
+-- SCROLLABLE ROUTE SELECTOR AREA
+local RouteScroll=make("ScrollingFrame",{
+ Position=UDim2.fromOffset(10,60),
+ Size=UDim2.fromOffset(250,205),
+ BackgroundColor3=Color3.fromRGB(27,32,44),
+ BorderSizePixel=0,
+ ScrollBarThickness=5,
+ ScrollBarImageColor3=Blue,
+ CanvasSize=UDim2.new(),
+ Active=true,
+ ClipsDescendants=true
+},Panel)
+corner(RouteScroll)
+
+local RouteLayout=make("UIListLayout",{
+ Padding=UDim.new(0,5),
+ SortOrder=Enum.SortOrder.LayoutOrder
+},RouteScroll)
+
+make("UIPadding",{
+ PaddingTop=UDim.new(0,5),
+ PaddingLeft=UDim.new(0,5),
+ PaddingRight=UDim.new(0,5),
+ PaddingBottom=UDim.new(0,5)
+},RouteScroll)
+
+RouteLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+ RouteScroll.CanvasSize=UDim2.fromOffset(0,
+  RouteLayout.AbsoluteContentSize.Y+10)
+end)
+
+local AddRoute=button(Panel,"AddRoute","+ ADD WAYPOINT",
+ 10,275,120,34,Green)
+
+local RemoveRoute=button(Panel,"RemoveRoute","DELETE LAST",
+ 140,275,120,34,Red)
+
+label(Panel,"SPEED / DELAY (SECONDS)",10,317,240,18,10,
+ Color3.fromRGB(150,165,185))
+
+local SpeedBox=textbox(Panel,10,337,105,30,"Seconds","1")
 
 local ApplySpeed=button(Panel,"ApplySpeed","APPLY",
- 125,218,125,32,Blue)
+ 125,337,135,30,Blue)
 
+-- LOOP BUTTONS
 local LoopTween=button(Panel,"LoopTween","LOOP TWEEN: OFF",
- 10,265,240,36,Blue)
+ 10,375,120,34,Blue)
 
 local LoopTP=button(Panel,"LoopTP","LOOP TP: OFF",
- 10,310,240,36,Green)
+ 140,375,120,34,Green)
 
 -- COLORS
 local Colors={
@@ -318,11 +285,16 @@ local function createMarker(name,pos,color)
  },Folder)
 end
 
+local function getNames()
+ local t={}
+ for n in pairs(Waypoints) do table.insert(t,n) end
+ table.sort(t)
+ return t
+end
+
 local function updateVisibility()
  for n,d in pairs(Waypoints) do
-  if d.Marker then
-   d.Marker.Transparency=(ShowAll or n==Selected) and .45 or 1
-  end
+  d.Marker.Transparency=(ShowAll or n==Selected) and .45 or 1
  end
  Visibility.Text=ShowAll and "SHOW ALL: ON" or "SHOW ALL: OFF"
  Visibility.BackgroundColor3=ShowAll and Blue or Gray
@@ -340,7 +312,6 @@ local function refresh()
   local item=button(List,"Waypoint",n,0,0,240,30,Gray,51)
   item.Size=UDim2.new(1,-5,0,30)
   item.LayoutOrder=i
-
   item.MouseButton1Click:Connect(function()
    Selected=n
    List.Visible=false
@@ -363,25 +334,116 @@ end
 local function stopLoop()
  Running=false
  LoopToken=LoopToken+1
-
  if ActiveTween then
   ActiveTween:Cancel()
   ActiveTween=nil
  end
-
  LoopTween.Text="LOOP TWEEN: OFF"
  LoopTP.Text="LOOP TP: OFF"
  LoopTween.BackgroundColor3=Blue
  LoopTP.BackgroundColor3=Green
 end
 
-local function cancelIfMissing(name)
- if A==name then A=nil end
- if B==name then B=nil end
- if Running and (A==nil or B==nil) then
-  stopLoop()
+-- ROUTE SELECTOR ROWS
+local function createRouteRow(index)
+ local row=make("Frame",{
+  Size=UDim2.new(1,-5,0,35),
+  BackgroundTransparency=1,
+  LayoutOrder=index
+ },RouteScroll)
+
+ local selectButton=button(row,"WaypointSelect",
+  "SELECT WAYPOINT ▼",0,0,195,32,Gray,3)
+
+ local deleteButton=button(row,"Remove","×",200,0,35,32,Red,3)
+
+ local menu=make("ScrollingFrame",{
+  Position=UDim2.fromOffset(0,34),
+  Size=UDim2.fromOffset(195,0),
+  BackgroundColor3=Color3.fromRGB(35,42,56),
+  BorderSizePixel=0,
+  ScrollBarThickness=4,
+  Visible=false,
+  ZIndex=20,
+  Active=true,
+  ClipsDescendants=true
+ },row)
+ corner(menu)
+
+ make("UIListLayout",{
+  Padding=UDim.new(0,2)
+ },menu)
+
+ local entry={Row=row,Button=selectButton,Menu=menu,Value=nil}
+ table.insert(Route,entry)
+
+ local function refreshMenu()
+  for _,v in ipairs(menu:GetChildren()) do
+   if v:IsA("TextButton") then v:Destroy() end
+  end
+
+  for i,n in ipairs(getNames()) do
+   local option=button(menu,"Option",n,0,0,185,27,Gray,21)
+   option.Size=UDim2.new(1,-4,0,27)
+   option.LayoutOrder=i
+
+   option.MouseButton1Click:Connect(function()
+    entry.Value=n
+    selectButton.Text=n.." ▼"
+    menu.Visible=false
+    menu.Size=UDim2.fromOffset(195,0)
+   end)
+  end
+
+  menu.CanvasSize=UDim2.fromOffset(0,#getNames()*29)
  end
+
+ selectButton.MouseButton1Click:Connect(function()
+  refreshMenu()
+  menu.Visible=not menu.Visible
+  menu.Size=UDim2.fromOffset(195,menu.Visible and 100 or 0)
+ end)
+
+ deleteButton.MouseButton1Click:Connect(function()
+  if Running then stopLoop() end
+  for i,v in ipairs(Route) do
+   if v==entry then
+    table.remove(Route,i)
+    break
+   end
+  end
+  row:Destroy()
+  for i,v in ipairs(Route) do
+   v.Row.LayoutOrder=i
+  end
+ end)
+
+ return entry
 end
+
+local function addRouteRow()
+ if #Route>=100 then
+  Status.Text="Route limit reached (100)"
+  return
+ end
+ createRouteRow(#Route+1)
+end
+
+AddRoute.MouseButton1Click:Connect(addRouteRow)
+
+RemoveRoute.MouseButton1Click:Connect(function()
+ if #Route<=2 then
+  Status.Text="Keep at least two route slots"
+  return
+ end
+ if Running then stopLoop() end
+ local last=table.remove(Route)
+ if last then last.Row:Destroy() end
+end)
+
+-- START WITH TWO ROUTE SLOTS
+addRouteRow()
+addRouteRow()
 
 -- CREATE WAYPOINT
 New.MouseButton1Click:Connect(function()
@@ -389,10 +451,7 @@ New.MouseButton1Click:Connect(function()
  if not r then Status.Text="Character unavailable" return end
 
  local name=NameBox.Text
- if name=="" then
-  name="Waypoint "..tostring(#getNames()+1)
- end
-
+ if name=="" then name="Waypoint "..tostring(#getNames()+1) end
  if Waypoints[name] then
   Status.Text="Name already exists!"
   return
@@ -411,7 +470,6 @@ New.MouseButton1Click:Connect(function()
  Status.Text="Created: "..name
 end)
 
--- DROPDOWN
 Drop.MouseButton1Click:Connect(function()
  List.Visible=not List.Visible
  List.Size=UDim2.new(1,-24,0,List.Visible and 125 or 0)
@@ -432,13 +490,16 @@ Rename.MouseButton1Click:Connect(function()
 
  local oldName=Selected
  local data=Waypoints[oldName]
-
  Waypoints[newName]=data
  Waypoints[oldName]=nil
  data.Marker.Name="Marker_"..newName
 
- if A==oldName then A=newName end
- if B==oldName then B=newName end
+ for _,entry in ipairs(Route) do
+  if entry.Value==oldName then
+   entry.Value=newName
+   entry.Button.Text=newName.." ▼"
+  end
+ end
 
  Selected=newName
  NameBox.Text=""
@@ -455,11 +516,17 @@ Delete.MouseButton1Click:Connect(function()
 
  local oldName=Selected
  local data=Waypoints[oldName]
-
- if data.Marker then data.Marker:Destroy() end
+ data.Marker:Destroy()
  Waypoints[oldName]=nil
 
- cancelIfMissing(oldName)
+ for _,entry in ipairs(Route) do
+  if entry.Value==oldName then
+   entry.Value=nil
+   entry.Button.Text="SELECT WAYPOINT ▼"
+  end
+ end
+
+ if Running then stopLoop() end
  Selected=nil
  removeTool()
  refresh()
@@ -474,14 +541,11 @@ GetTool.MouseButton1Click:Connect(function()
  end
 
  local backpack=Player:FindFirstChildOfClass("Backpack")
- if not backpack then
-  Status.Text="Backpack unavailable"
-  return
- end
+ if not backpack then Status.Text="Backpack unavailable" return end
 
  removeTool()
-
  local target=Selected
+
  local tool=Instance.new("Tool")
  tool.Name="Set Waypoint: "..target
  tool.ToolTip="Equip and click to set waypoint coordinates"
@@ -499,29 +563,24 @@ GetTool.MouseButton1Click:Connect(function()
   end
 
   local hit=Mouse.Hit
-  if not hit then
-   Status.Text="No position detected!"
-   return
-  end
+  if not hit then return end
 
   data.CFrame=CFrame.new(hit.Position)
   data.Marker.Position=hit.Position
-
   Status.Text="Updated "..target.." coordinates!"
   removeTool()
   refresh()
  end)
 
- Status.Text="Equip the tool and click a position!"
+ Status.Text="Equip tool and click a position!"
 end)
 
--- VISIBILITY
 Visibility.MouseButton1Click:Connect(function()
  ShowAll=not ShowAll
  updateVisibility()
 end)
 
--- SINGLE WAYPOINT MOVEMENT
+-- SINGLE MOVEMENT
 local function teleport(smooth)
  if not Selected or not Waypoints[Selected] then
   Status.Text="Select a waypoint first!"
@@ -529,7 +588,7 @@ local function teleport(smooth)
  end
 
  local r=root()
- if not r then Status.Text="Character unavailable" return end
+ if not r then return end
 
  if ActiveTween then
   ActiveTween:Cancel()
@@ -558,80 +617,89 @@ TP.MouseButton1Click:Connect(function()
  teleport(false)
 end)
 
--- SPEED INPUT
-ApplySpeed.MouseButton1Click:Connect(function()
+-- SPEED
+local function applySpeed()
  local v=tonumber(SpeedBox.Text)
  if not v or v<=0 then v=1 end
  Speed=math.clamp(v,.05,60)
  SpeedBox.Text=tostring(Speed)
- Status.Text="Speed/delay set to "..Speed
-end)
+ Status.Text="Speed/delay: "..Speed
+end
 
-SpeedBox.FocusLost:Connect(function()
- local v=tonumber(SpeedBox.Text)
- if not v or v<=0 then v=1 end
- Speed=math.clamp(v,.05,60)
- SpeedBox.Text=tostring(Speed)
-end)
+ApplySpeed.MouseButton1Click:Connect(applySpeed)
+SpeedBox.FocusLost:Connect(applySpeed)
 
--- LOOP ENGINE
+-- LOOP
 local function startLoop(mode)
  if Running then stopLoop() end
 
- if not A or not B or A==B or not Waypoints[A] or not Waypoints[B] then
-  Status.Text="Choose two different waypoints!"
+ if #Route<2 then
+  Status.Text="Add at least two route slots!"
   return
+ end
+
+ local targets={}
+ for _,entry in ipairs(Route) do
+  if not entry.Value or not Waypoints[entry.Value] then
+   Status.Text="Choose a waypoint in every slot!"
+   return
+  end
+  table.insert(targets,entry.Value)
+ end
+
+ for i=2,#targets do
+  if targets[i]==targets[i-1] then
+   Status.Text="Choose different consecutive waypoints!"
+   return
+  end
  end
 
  Running=true
  LoopToken=LoopToken+1
- local myToken=LoopToken
+ local token=LoopToken
 
  if mode=="Tween" then
-  LoopTween.Text="STOP LOOP TWEEN"
+  LoopTween.Text="STOP TWEEN"
   LoopTween.BackgroundColor3=Red
  else
   LoopTP.Text="STOP LOOP TP"
   LoopTP.BackgroundColor3=Red
  end
 
- Status.Text="Loop "..mode.." started"
-
  task.spawn(function()
-  local destination=B
+  local index=1
 
-  while Running and LoopToken==myToken do
+  while Running and LoopToken==token do
    local r=root()
-   local data=Waypoints[destination]
-
+   local data=Waypoints[targets[index]]
    if not r or not data then break end
 
-   local target=data.CFrame
-
    if mode=="TP" then
-    r.CFrame=target
+    r.CFrame=data.CFrame
     task.wait(Speed)
    else
     local tween=TS:Create(r,
      TweenInfo.new(Speed,Enum.EasingStyle.Linear),
-     {CFrame=target})
+     {CFrame=data.CFrame})
 
     ActiveTween=tween
     tween:Play()
-
     local result=tween.Completed:Wait()
+
     if result~=Enum.PlaybackState.Completed then break end
     ActiveTween=nil
    end
 
-   destination=(destination==A) and B or A
+   index=index%#targets+1
   end
 
-  if LoopToken==myToken then
+  if LoopToken==token then
    stopLoop()
    Status.Text="Loop stopped"
   end
  end)
+
+ Status.Text=mode.." route started"
 end
 
 LoopTween.MouseButton1Click:Connect(function()
@@ -652,28 +720,26 @@ LoopTP.MouseButton1Click:Connect(function()
  end
 end)
 
--- PANEL TOGGLES
+-- PANEL
 MiscButton.MouseButton1Click:Connect(function()
  Panel.Visible=not Panel.Visible
 end)
 
 PanelClose.MouseButton1Click:Connect(function()
  Panel.Visible=false
- -- Active loops intentionally continue.
 end)
 
--- DRAGGING
+-- DRAG
 local function draggable(target,handle)
  local dragging=false
- local dragStart
- local startPos
+ local startInput,startPosition
 
  handle.InputBegan:Connect(function(input)
   if input.UserInputType==Enum.UserInputType.MouseButton1
   or input.UserInputType==Enum.UserInputType.Touch then
    dragging=true
-   dragStart=input.Position
-   startPos=target.Position
+   startInput=input.Position
+   startPosition=target.Position
   end
  end)
 
@@ -682,10 +748,10 @@ local function draggable(target,handle)
    input.UserInputType==Enum.UserInputType.MouseMovement
    or input.UserInputType==Enum.UserInputType.Touch
   ) then
-   local delta=input.Position-dragStart
+   local d=input.Position-startInput
    target.Position=UDim2.new(
-    startPos.X.Scale,startPos.X.Offset+delta.X,
-    startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+    startPosition.X.Scale,startPosition.X.Offset+d.X,
+    startPosition.Y.Scale,startPosition.Y.Offset+d.Y)
   end
  end)
 
@@ -700,7 +766,6 @@ end
 draggable(Main,Header)
 draggable(Panel,PanelHeader)
 
--- CLOSE EVERYTHING
 Close.MouseButton1Click:Connect(function()
  stopLoop()
  removeTool()
